@@ -8,6 +8,37 @@ train/    customize a model on your own code (GPU needed, done off-server)
 agent/    Claude Code-style terminal agent that talks to your model
 ```
 
+## Customize the agent's behavior and guardrails
+
+The agent is fully under your control. You can swap the system prompt and add
+your own input/output policy rules without changing code:
+
+```bash
+# Use your own system prompt
+python agent/agent.py --system-prompt agent/my-prompt.txt
+
+# Add keyword guardrails
+python agent/agent.py --rules agent/my-rules.txt
+```
+
+Example `agent/my-rules.txt`:
+
+```text
+# Reject user inputs containing these phrases
+BLOCK:password
+BLOCK:secret key
+
+# Reject model outputs containing these phrases
+OUTPUT_BLOCK:I cannot
+OUTPUT_BLOCK:sorry
+```
+
+For **true full control**, use these flags with your **self-hosted** llama.cpp
+model. Hosted APIs (GLM, DeepSeek, etc.) still enforce their own safety filters
+server-side, so `--system-prompt` can only shape behavior within their policies.
+When you host the model yourself, the system prompt and rules are the only
+behavior boundaries.
+
 ## Be realistic first
 
 Claude Code and Z.ai's GLM are **harness + giant model**. The harness (agent loop, tools, file edits) you can build fully, and `agent/agent.py` is a working one. The giant model (hundreds of billions of parameters, trained on thousands of GPUs) you cannot train or host yourself. What you can do:

@@ -1,0 +1,14 @@
+# Custom policy example for mycoder agent.
+# Each non-comment, non-empty line is a rule. Supported prefixes:
+#
+#   BLOCK:<phrase>        - reject user input containing <phrase> (case-insensitive)
+#   OUTPUT_BLOCK:<phrase> - reject model output containing <phrase> (case-insensitive)
+#
+# You can add behavioral rules directly into your system prompt file instead;
+# this file is for simple keyword guardrails only.
+
+# Examples (uncomment to enable):
+# BLOCK:password
+# BLOCK:secret key
+# OUTPUT_BLOCK:I cannot
+# OUTPUT_BLOCK:sorry

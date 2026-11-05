@@ -14,6 +14,10 @@ Run inside the project you want it to work on:
     python agent.py "add input validation to signup.py"
     python agent.py --yes "run the tests and fix failures"   # skip confirmations
 
+Customize behavior and guardrails:
+    python agent.py --system-prompt agent/my-prompt.txt
+    python agent.py --rules agent/my-rules.txt
+
 File tools are confined to the current directory. Writes and shell commands ask
 for confirmation unless you pass --yes.
 """
@@ -31,8 +35,9 @@ ROOT = Path.cwd().resolve()
 MAX_OUTPUT = 6000          # chars returned to the model per tool call (keep context small)
 MAX_STEPS = 20             # tool-use rounds per user request
 AUTO_YES = False
+CUSTOM_RULES = []
 
-SYSTEM_PROMPT = f"""You are mycoder, a terminal coding agent working in the project at {ROOT}.
+DEFAULT_SYSTEM_PROMPT = f"""You are mycoder, a terminal coding agent working in the project at {ROOT}.
 Use the tools to inspect and change files, then give a short final answer.
 Rules:
 - Read a file before editing it. Prefer edit_file over rewriting whole files.
@@ -72,6 +77,37 @@ SKIP_DIRS = {".git", "node_modules", "vendor", "__pycache__", ".venv", "venv", "
 
 
 # ---------- helpers ----------
+
+def load_rules(path):
+    """Load a list of policy rules from a text file. Empty lines and # comments ignored."""
+    p = Path(path).expanduser()
+    if not p.exists():
+        return []
+    return [line.strip() for line in p.read_text().splitlines()
+            if line.strip() and not line.strip().startswith("#")]
+
+
+def input_guard(text):
+    """Block user inputs that violate your custom rules. Returns (ok, reason)."""
+    lowered = text.lower()
+    for rule in CUSTOM_RULES:
+        if rule.startswith("BLOCK:"):
+            _, needle = rule.split(":", 1)
+            if needle.strip().lower() in lowered:
+                return False, f"Blocked by local policy: {needle.strip()}"
+    return True, None
+
+
+def output_guard(text):
+    """Block model outputs that violate your custom rules. Returns (ok, reason)."""
+    lowered = text.lower()
+    for rule in CUSTOM_RULES:
+        if rule.startswith("OUTPUT_BLOCK:"):
+            _, needle = rule.split(":", 1)
+            if needle.strip().lower() in lowered:
+                return False, f"Output blocked by local policy: {needle.strip()}"
+    return True, None
+
 
 def safe_path(rel):
     p = (ROOT / (rel or ".")).resolve()
@@ -239,10 +275,15 @@ def extract_calls(msg):
 def run_turn(messages):
     for _ in range(MAX_STEPS):
         msg = chat(messages)
+        content = msg.get("content", "")
+        ok, reason = output_guard(content)
+        if not ok:
+            print(f"\n[Policy block] {reason}\n")
+            return
         calls = extract_calls(msg)
         messages.append({k: v for k, v in msg.items() if v is not None})
         if not calls:
-            print(f"\n{msg.get('content', '').strip()}\n")
+            print(f"\n{content.strip()}\n")
             return
         for call_id, name, args in calls:
             print(f"\033[36m> {name}({json.dumps(args)[:150]})\033[0m")
@@ -252,16 +293,30 @@ def run_turn(messages):
 
 
 def main():
-    global AUTO_YES
+    global AUTO_YES, CUSTOM_RULES
     ap = argparse.ArgumentParser()
     ap.add_argument("task", nargs="*", help="one-shot task; omit for interactive mode")
     ap.add_argument("--yes", action="store_true", help="auto-approve writes and commands")
+    ap.add_argument("--system-prompt", help="path to a custom system prompt file")
+    ap.add_argument("--rules", help="path to a custom rules/policy file")
     args = ap.parse_args()
     AUTO_YES = args.yes
+    CUSTOM_RULES = load_rules(args.rules) if args.rules else []
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    system = DEFAULT_SYSTEM_PROMPT
+    if args.system_prompt:
+        system = Path(args.system_prompt).expanduser().read_text(encoding="utf-8")
+    elif os.environ.get("LLM_SYSTEM_PROMPT"):
+        system = Path(os.environ["LLM_SYSTEM_PROMPT"]).expanduser().read_text(encoding="utf-8")
+
+    messages = [{"role": "system", "content": system}]
     if args.task:
-        messages.append({"role": "user", "content": " ".join(args.task)})
+        user_text = " ".join(args.task)
+        ok, reason = input_guard(user_text)
+        if not ok:
+            print(f"[Policy block] {reason}")
+            return
+        messages.append({"role": "user", "content": user_text})
         run_turn(messages)
         return
 
@@ -273,6 +328,10 @@ def main():
             print()
             return
         if not line:
+            continue
+        ok, reason = input_guard(line)
+        if not ok:
+            print(f"[Policy block] {reason}")
             continue
         messages.append({"role": "user", "content": line})
         run_turn(messages)

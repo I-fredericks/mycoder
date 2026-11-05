@@ -86,12 +86,19 @@ def teacher_request(messages, provider, base=None, model=None, key=None,
         try:
             with urllib.request.urlopen(req, timeout=180) as r:
                 return json.load(r)["choices"][0]["message"]["content"].strip()
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError,
-                KeyError, json.JSONDecodeError) as e:
+        except urllib.error.HTTPError as e:
             last = e
-            status = getattr(e, "code", None)
-            if status in (401, 403):
-                raise SystemExit(f"{provider} rejected the API key (HTTP {status}).")
+            if e.code in (401, 403):
+                raise SystemExit(f"{provider} rejected the API key (HTTP {e.code}).")
+            if e.code == 429:
+                wait = e.headers.get("Retry-After")
+                time.sleep(float(wait) if wait and wait.replace(".", "").isdigit()
+                           else min(60, 8 * (attempt + 1) ** 2))
+                continue
+            time.sleep(2 * (attempt + 1))
+        except (urllib.error.URLError, TimeoutError, KeyError,
+                json.JSONDecodeError) as e:
+            last = e
             time.sleep(2 * (attempt + 1))   # rate limits: back off and retry
     print(f"  !! {provider} failed after {retries} tries: {last}", file=sys.stderr)
     return None
@@ -242,9 +249,10 @@ def main():
     print(f"{len(jobs)} jobs, teachers: {', '.join(providers)}, workers={args.workers}")
 
     results, seen, failed = [], set(), 0
+    rot = iter(range(len(jobs) * 10))  # round-robin per job, independent of success
 
     def pick_provider():
-        return providers[len(results) % len(providers)]
+        return providers[next(rot) % len(providers)]
 
     def run(job):
         desc, kind, payload = job

@@ -10,7 +10,8 @@ Setup:
     export LLM_MODEL=coder                              # llama.cpp ignores the name
 
 Run inside the project you want it to work on:
-    python agent.py                    # interactive chat
+    python agent.py                    # interactive coding mode (default)
+    python agent.py --mode research    # read/search only, no writes or shell
     python agent.py "add input validation to signup.py"
     python agent.py --yes "run the tests and fix failures"   # skip confirmations
 
@@ -45,7 +46,7 @@ Rules:
 - After changes, run tests or a syntax check with run_command when possible.
 - Be concise. When the task is done, reply with a brief summary and no tool call."""
 
-TOOLS = [
+ALL_TOOLS = [
     {"type": "function", "function": {
         "name": "list_dir", "description": "List files in a directory (relative path).",
         "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": []}}},
@@ -72,6 +73,24 @@ TOOLS = [
         "name": "run_command", "description": "Run a shell command in the project directory (60s timeout).",
         "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}},
 ]
+
+READONLY_TOOLS = [
+    {"type": "function", "function": {
+        "name": "list_dir", "description": "List files in a directory (relative path).",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "read_file", "description": "Read a text file with line numbers.",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string"},
+            "start": {"type": "integer", "description": "first line, 1-based"},
+            "end": {"type": "integer", "description": "last line"}}, "required": ["path"]}}},
+    {"type": "function", "function": {
+        "name": "search", "description": "Regex search across project files. Returns file:line: text.",
+        "parameters": {"type": "object", "properties": {
+            "pattern": {"type": "string"}, "path": {"type": "string"}}, "required": ["pattern"]}}},
+]
+
+TOOLS = ALL_TOOLS
 
 SKIP_DIRS = {".git", "node_modules", "vendor", "__pycache__", ".venv", "venv", "build", "dist"}
 
@@ -323,17 +342,25 @@ def run_turn(messages):
 
 
 def main():
-    global AUTO_YES, CUSTOM_RULES
+    global AUTO_YES, CUSTOM_RULES, TOOLS
     ap = argparse.ArgumentParser()
     ap.add_argument("task", nargs="*", help="one-shot task; omit for interactive mode")
     ap.add_argument("--yes", action="store_true", help="auto-approve writes and commands")
     ap.add_argument("--system-prompt", help="path to a custom system prompt file")
     ap.add_argument("--rules", help="path to a custom rules/policy file")
+    ap.add_argument("--mode", choices=["coding", "research"], default="coding",
+                    help="coding=full agent tools; research=read/search only")
     args = ap.parse_args()
     AUTO_YES = args.yes
     CUSTOM_RULES = load_rules(args.rules) if args.rules else []
 
-    system = DEFAULT_SYSTEM_PROMPT
+    if args.mode == "research":
+        TOOLS = READONLY_TOOLS
+        system = (Path(__file__).parent / "prompts" / "research.txt").read_text(encoding="utf-8")
+    else:
+        TOOLS = ALL_TOOLS
+        system = DEFAULT_SYSTEM_PROMPT
+
     if args.system_prompt:
         system = Path(args.system_prompt).expanduser().read_text(encoding="utf-8")
     elif os.environ.get("LLM_SYSTEM_PROMPT"):

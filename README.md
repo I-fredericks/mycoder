@@ -8,6 +8,19 @@ train/    customize a model on your own code (GPU needed, done off-server)
 agent/    Claude Code-style terminal agent that talks to your model
 ```
 
+## Agent modes: research vs coding
+
+The same endpoint serves two modes. Research mode can only read/search files;
+coding mode can edit and run shell commands.
+
+```bash
+# Research / reasoning — read files, no writes, no shell commands
+python agent/agent.py --mode research
+
+# Coding — full agent with write/edit/run tools (default)
+python agent/agent.py --mode coding
+```
+
 ## Customize the agent's behavior and guardrails
 
 The agent is fully under your control. You can swap the system prompt and add

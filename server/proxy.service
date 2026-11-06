@@ -1,0 +1,12 @@
+[Unit]
+Description=mycoder research proxy (adds web search to local model)
+After=network.target llama.service
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/mycoder/proxy.py
+WorkingDirectory=/opt/mycoder
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

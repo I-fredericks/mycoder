@@ -9,7 +9,7 @@ set -euo pipefail
 MODEL_URL="${MODEL_URL:-https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
 MODEL_DIR=/opt/models
 MODEL_FILE="$MODEL_DIR/coder.gguf"
-CTX="${CTX:-4096}"          # context window; raise only if RAM allows
+CTX="${CTX:-8192}"          # context window; raise only if RAM allows (this VPS uses 16384)
 THREADS="$(nproc)"
 
 echo "==> Installing build tools"

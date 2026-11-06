@@ -248,6 +248,34 @@ def chat(messages):
 
 
 TOOL_TAG = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.S)
+BARE_TOOL = re.compile(r'\{[^}]*"name"[^}]*"arguments"[^}]*\}', re.S)
+
+
+def _bare_tool_calls(content):
+    """Some small models emit tool calls as plain JSON blocks without tags."""
+    calls = []
+    for m in BARE_TOOL.finditer(content):
+        # expand to balanced braces
+        start = m.start()
+        depth = 0
+        end = None
+        for i, ch in enumerate(content[start:], start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        if end is None:
+            continue
+        try:
+            obj = json.loads(content[start:end])
+            if "name" in obj and "arguments" in obj:
+                calls.append((f"bare{len(calls)}", obj["name"], obj.get("arguments", {})))
+        except json.JSONDecodeError:
+            continue
+    return calls
 
 
 def extract_calls(msg):
@@ -269,6 +297,8 @@ def extract_calls(msg):
                 calls.append((f"fallback{i}", obj["name"], obj.get("arguments", {})))
             except (json.JSONDecodeError, KeyError):
                 continue
+        if not calls:
+            calls = _bare_tool_calls(msg["content"])
     return calls
 
 
